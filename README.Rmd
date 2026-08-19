@@ -1,0 +1,75 @@
+---
+title: "README"
+subtitle: "Sex differences in how elevated temperatures affect immune response"
+---
+
+## Overview
+
+This repository contains the data and analysis code for the manuscript "Sex differences in
+how elevated temperatures affect immune response" (Fu, Head, Iglesias-Carrasco, MacNamara &
+Chung). The study uses a multigenerational experiment with the seed beetle (*Callosobruchus
+maculatus*) in which maternal, paternal and offspring developmental temperatures were
+independently manipulated (control = 25°C, coded "C"; elevated = 31°C, coded "H"), and tests
+how these temperatures affect two components of offspring innate immunity: phenoloxidase (PO)
+activity and lytic (antibacterial) activity.
+
+All statistics and figures reported in the manuscript are produced by
+`Beetle_analysis_script.Rmd`. That script is kept intentionally minimal (code and short
+in-line comments only); this README holds the fuller explanations, the data dictionary, and a
+map from each script section to the corresponding table/figure in the manuscript.
+
+## Repository contents
+
+| File | Description |
+|---|---|
+| `Beetle_analysis_script.Rmd` | Analysis code: data cleaning, standardisation, mixed models, figures, and effect sizes. |
+| `raw_data.csv` | Raw dataset (n = 1740 individuals sampled; see manuscript Table S1 for sample sizes per treatment combination). |
+| `README.Rmd` / `README.md` | This file. |
+
+## Data dictionary (`raw_data.csv`)
+
+One row = one offspring beetle sampled for immune assays. Columns used in the analysis
+script:
+
+| Column | Meaning |
+|---|---|
+| `Mum_temp`, `Dad_temp` | Rearing temperature of the mother/father ("C" = control/ancestral 25°C, "H" = high/elevated 31°C) |
+| `OS_temp` | Offspring (developmental) rearing temperature (same "C"/"H" coding) |
+| `Sex` | Offspring sex ("F"/"M") |
+| `OS_age` | Offspring age at sampling, in days post-eclosion (1, 3, 5 or 7) |
+| `Weight` | Offspring body weight (mg) at collection |
+| `PO_Activity`, `PO_interplate`, `PO_Plate_ID` | Raw PO activity (OD/min), the matched inter-plate control value, and plate ID (used to standardise PO activity within plate) |
+| `Zone_Area_1/2/3`, `Zone_Clarity`, `Lytic_Interplate`, `Lytic_Plate_ID` | Triplicate raw inhibition-zone measurements, a qualitative clarity score, the inter-plate control, and plate ID for the lytic assay |
+| `Mother` | Maternal family ID, fitted as the random effect (siblings share a mother) |
+
+## Analysis approach
+
+For both PO activity and lytic activity, and for each sex separately (to avoid overfitting;
+see Methods), the script fits linear mixed models (`lme4::lmer`) with maternal, paternal and
+developmental temperature and their interactions as fixed effects, offspring age (ordered
+factor) and body weight as covariates, and mother (family) ID as a random intercept. Lytic
+models additionally include inhibition-zone clarity as a covariate. Each model starts as the
+full three-way-interaction model and is simplified by removing non-significant higher-order
+interactions in turn (Type III Wald chi-square tests via `car::Anova`); the final reduced
+model is compared against the full model with a likelihood-ratio test
+(`anova(..., REML = FALSE)`). Where a significant maternal-by-paternal interaction remains,
+pairwise comparisons use Tukey-adjusted contrasts (`emmeans`).
+
+PO activity is standardised (within-plate correction against the inter-plate control) and
+log-transformed before modelling. Lytic activity is standardised the same way but left on the
+raw scale, since raw-scale residuals met the normality/homoscedasticity assumptions (assessed
+via Q-Q plots; see Methods).
+
+Effect sizes (Cohen's d, control vs. high developmental temperature) are calculated separately
+for females and males for both responses, and the two sexes' effect sizes are compared with a
+Welch-style t-test, matching the "Sex difference" paragraphs in the manuscript Results.
+
+## How to run
+
+1. Open the folder containing `Beetle_analysis_script.Rmd` and `raw_data.csv` as the
+   working directory (e.g. via an RStudio Project) before knitting/running the script — it
+   reads `raw_data.csv` using a relative path.
+2. Run the script top to bottom. The first chunk installs any missing packages.
+3. Analyses reported in the manuscript were run in R 4.5.1 (R Core Team) within RStudio
+   2025.05.1. Package versions used are not pinned in the script; when archiving results,
+   record `sessionInfo()` output alongside the script.

@@ -1,0 +1,753 @@
+# Package
+
+```{r}
+packages <- c(
+  "ggplot2", "dplyr", "tidyverse", "readr", "car",
+  "janitor", "skimr", "lme4", "lmerTest", "emmeans",
+  "multcomp", "multcompView", "ggResidpanel"
+)
+
+# Install only the ones not already installed
+new_packages <- packages[!(packages %in% installed.packages()[, "Package"])]
+if (length(new_packages)) install.packages(new_packages)
+
+# Then load them all
+lapply(packages, library, character.only = TRUE)
+
+install.packages("remotes")
+remotes::install_github("goodekat/ggResidpanel")
+```
+
+# count sample size per treatment combination
+```{r}
+raw_data <-read.csv("raw_data.csv")
+
+raw_data %>%
+  group_by(Mum_temp, Dad_temp,Sex, OS_temp,OS_age)  %>%
+  summarise(total_n = n(),
+            .groups = "drop") 
+```
+
+# PO activity
+```{r}
+## Read file
+po <- read.csv("raw_data.csv") %>%
+  clean_names() %>%     # change the variable names: convert to lowercase with underscores
+  mutate(os_temp = factor(os_temp, levels = c("C", "H"), 
+                          labels = c("ancestral", "high")),
+         mum_temp = factor(mum_temp, levels = c("C", "H"),
+                           labels = c("ancestral", "high")),
+         dad_temp = factor(dad_temp, levels = c("C", "H"),
+                           labels = c("ancestral", "high")),
+         sex = factor(sex, levels = c("F", "M"),
+                      labels = c("female", "male")),
+         os_age = factor(os_age, levels = c("1", "3", "5", "7"), 
+                         ordered = TRUE))   # modify offspring age as an ordered factor
+
+## Tidy data
+po_clean <- po %>%
+  filter(!is.na(po_activity)) # remove rows where PO activity is not available
+
+
+## Standardize PO activity
+
+# To standardize the PO activity across the plates, PO activity was divided by the inter-plate control and followed by a log-transformation. The standardized immune response was stored as log_po_corrected
+
+po_corrected <- po_clean %>%
+  group_by(po_plate_id) %>%
+  mutate(
+    log_po_corrected = log(po_activity / po_interplate) # Compute standardized PO activity
+    ) %>% 
+  group_by(.groups = "drop") 
+
+# Use Q-Q plot to check the normality of standardized PO activity.
+library(ggplot2)
+ggplot(po_corrected, aes(sample = log_po_corrected)) +
+  stat_qq() +
+  stat_qq_line(col = "red") +
+  theme_classic()
+
+## Separate dataset by sex (PO activity)
+
+# female data
+female_po <- po_corrected [po_corrected$sex == "female", ]
+
+# male data
+male_po <- po_corrected [po_corrected$sex == "male", ]
+
+```
+
+## Female analysis (PO activity)
+```{r}
+# Full model: with all possible interactions
+
+F_model_po_full <- lmer(log_po_corrected ~ mum_temp * dad_temp * os_temp + os_age + weight + (1 | mother),
+  data = female_po) # response variable is log(po activity) after standardize. random variable is mother (means family id)
+
+summary (F_model_po_full)
+Anova(F_model_po_full, type = 3)
+resid_panel(F_model_po_full)
+
+# Reduced model: excluding the non-significant three-way interaction
+
+F_model_po_2 <- lmer(log_po_corrected ~ mum_temp * dad_temp + mum_temp * os_temp + dad_temp * os_temp + os_age + weight + (1 | mother),
+  data = female_po) # response variable is log(po activity) after standardize. random variable is mother (means family id)
+
+summary (F_model_po_2)
+Anova(F_model_po_2, type = 3)
+
+# Final model: excluding the non-significant two-way interactions
+
+F_model_po_3 <- lmer(log_po_corrected ~ mum_temp + dad_temp + os_temp + os_age + weight + (1 | mother),
+  data = female_po) # response variable is log(po activity) after standardize. random variable is mother (means family id)
+
+summary (F_model_po_3)
+Anova(F_model_po_3, type = 3)
+
+# model comparison
+anova (F_model_po_full, F_model_po_3, REML = FALSE)
+
+```
+## Figure - Female PO activity 
+```{r}
+######################
+### offspring temp ### (Figure 2A)
+######################
+
+F1 <- ggplot(female_po, aes(x = os_temp, y = log_po_corrected)) +
+  geom_violin(colour = "black",
+              alpha = 0.6,
+              width = 0.5) +
+  geom_jitter(aes(colour = os_temp),
+              width = 0.1,
+              alpha = 0.05,
+              size = 1.5) +
+  stat_summary(fun.data = mean_se,
+               geom = "errorbar",
+               width = 0.15,
+               colour = "black",
+               linewidth = 1) +
+  scale_colour_manual(values = c("ancestral" = "blue",
+                                 "high" = "red")) +
+  scale_x_discrete(labels = c("ancestral" = "control",
+                              "high" = "high")) +
+  labs(x = "offspring temp",
+       y = "PO_corrected") +
+  theme_classic() +
+  theme(
+    axis.line = element_blank(),
+    panel.border = element_rect(colour = "black",
+                                fill = NA,
+                                linewidth = 1),
+    legend.position = "none"
+  )
+
+F1 + scale_y_continuous(limits = c(-4.2, 4),
+                   breaks = seq(-4, 4, 2))
+
+# count sample size                   
+female_po%>%
+  group_by(os_temp)  %>%
+  summarise(total_n = n(),
+            .groups = "drop") 
+
+#######################
+### mum-by-dad temp ### (Figure 3A)
+#######################
+F1.1 <- ggplot(female_po, aes(x = interaction (dad_temp, mum_temp), y = log_po_corrected)) +
+  geom_violin(colour = "black",
+              alpha = 0.6,
+              width = 0.5) +
+  geom_jitter(aes(colour = dad_temp),
+              width = 0.1,
+              alpha = 0.05,
+              size = 1.5) +
+  stat_summary(fun.data = mean_se,
+               geom = "errorbar",
+               width = 0.15,
+               colour = "black",
+               linewidth = 1) +
+  scale_colour_manual(values = c("ancestral" = "blue",
+                                 "high" = "red")) +
+                                 scale_x_discrete(labels = c("ancestral.ancestral" = "control",
+                            "ancestral.high" = "control",
+                            "high.ancestral" = "high",
+                            "high.high" = "high")) + labs(x = "dad-mum_temp",
+       y = "PO_corrected") +
+  theme_classic() +
+  theme(
+    axis.line = element_blank(),
+    panel.border = element_rect(colour = "black",
+                                fill = NA,
+                                linewidth = 1),
+    legend.position = "none"
+  )
+
+F1.1
+
+# count sample size                    
+female_po%>%
+  group_by(mum_temp, dad_temp)  %>%
+  summarise(total_n = n(),
+            .groups = "drop") 
+
+```            
+
+## Male analysis (PO activity)
+```{r}
+# Full model: with all possible interactions
+
+M_model_po_full <- lmer(log_po_corrected ~ mum_temp * dad_temp * os_temp + os_age + weight + (1 | mother),
+  data = male_po) # response variable is log(po activity) after standardize. random variable is mother (means family id)
+
+summary (M_model_po_full)
+Anova(M_model_po_full, type = 3)
+resid_panel(M_model_po_full)
+
+# Reduced model: excluding the non-significant three-way interaction
+
+M_model_po_2 <- lmer(log_po_corrected ~ mum_temp * dad_temp + mum_temp * os_temp + dad_temp * os_temp + os_age + weight + (1 | mother), data = male_po) # response variable is log(po activity) after standardize. random variable is mother (means family id)
+
+summary (M_model_po_2)
+Anova(M_model_po_2, type = 3)
+resid_panel(M_model_po_2)
+
+# Final model: excluding the non-significant two-way interactions
+
+M_model_po_3 <- lmer(log_po_corrected ~ mum_temp * dad_temp + os_temp + os_age + weight + (1 | mother), data = male_po) # response variable is log(po activity) after standardize. random variable is mother (means family id)
+
+summary (M_model_po_3)
+Anova(M_model_po_3, type = 3)
+resid_panel(M_model_po_3)
+
+# model comparison
+anova (M_model_po_full, M_model_po_3, REML = FALSE)
+
+# pairwise analysis, given an interaction between mom * dad temperature
+em1 <- emmeans(M_model_po_3, ~ mum_temp * dad_temp)
+
+pairs(em1, adjust = "tukey")
+summary(em1)
+```
+
+## Figure - Male PO activity 
+```{r}
+####################
+## Offspring temp ## (Figure 2A)
+####################
+
+M1 <- ggplot(male_po, aes(x = os_temp, y = log_po_corrected)) +
+  geom_violin(colour = "black",
+              alpha = 0.6,
+              width = 0.5) +
+  geom_jitter(aes(colour = os_temp),
+              width = 0.1,
+              alpha = 0.05,
+              size = 1.5) +
+  stat_summary(fun.data = mean_se,
+               geom = "errorbar",
+               width = 0.15,
+               colour = "black",
+               linewidth = 1) +
+  scale_colour_manual(values = c("ancestral" = "blue",
+                                 "high" = "red")) +
+  scale_x_discrete(labels = c("ancestral" = "control",
+                              "high" = "high")) +
+  labs(x = "offspring temp",
+       y = "PO_corrected") +
+  theme_classic() +
+  theme(
+    axis.line = element_blank(),
+    panel.border = element_rect(colour = "black",
+                                fill = NA,
+                                linewidth = 1),
+    legend.position = "none"
+  )
+
+M1 + scale_y_continuous(limits = c(-4.2, 4),
+                   breaks = seq(-4, 4, 2))
+
+# count sample size 
+male_po%>%
+  group_by(os_temp)  %>%
+  summarise(total_n = n(),
+            .groups = "drop")
+
+#######################
+### mum-by-dad temp ### Figure 3B
+#######################
+M1.1 <- ggplot(male_po, aes(x = interaction (dad_temp, mum_temp), y = log_po_corrected)) +
+  geom_violin(colour = "black",
+              alpha = 0.6,
+              width = 0.5) +
+  geom_jitter(aes(colour = dad_temp),
+              width = 0.1,
+              alpha = 0.05,
+              size = 1.5) +
+  stat_summary(fun.data = mean_se,
+               geom = "errorbar",
+               width = 0.15,
+               colour = "black",
+               linewidth = 1) +
+  scale_colour_manual(values = c("ancestral" = "blue",
+                                 "high" = "red")) +
+                                 scale_x_discrete(labels = c("ancestral.ancestral" = "control",
+                            "ancestral.high" = "control",
+                            "high.ancestral" = "high",
+                            "high.high" = "high")) + labs(x = "dad-mum_temp",
+       y = "PO_corrected") +
+  theme_classic() +
+  theme(
+    axis.line = element_blank(),
+    panel.border = element_rect(colour = "black",
+                                fill = NA,
+                                linewidth = 1),
+    legend.position = "none"
+  )
+
+M1.1
+
+# count sample size 
+male_po%>%
+  group_by(mum_temp, dad_temp)  %>%
+  summarise(total_n = n(),
+            .groups = "drop") 
+```
+
+## Additional analysis by replacing 'maternal-by-paternal temperature combinations' with the matching between maternal and paternal temperatures
+```{r}
+## Create a new column depending on temperature matching between maternal and paternal temperatures
+library(dplyr)
+
+male_po <- male_po %>%
+  mutate(matchiness = case_when(
+    mum_temp == dad_temp ~ "matched",
+    mum_temp != dad_temp ~ "mismatched"
+  ))
+
+## Additional model (Replacing "mum_temp" and "dad_temp" with "matchiness" in the final male model)
+M_model_po_4 <- lmer(log_po_corrected ~ matchiness + os_temp + os_age + weight + (1 | mother), data = male_po) 
+summary (M_model_po_4)
+Anova(M_model_po_4, type = 3)
+resid_panel(M_model_po_4)
+
+emmeans(M_model_po_4, ~ matchiness) %>%
+  pairs(adjust = "tukey")
+
+## Figure (Figure S2)
+M2 <- ggplot(male_po, aes(x = matchiness, y = log_po_corrected, color = matchiness)) +
+  geom_violin(colour = "black",
+              alpha = 0.6,
+              width = 0.5) +
+  geom_jitter(width = 0.1,
+              alpha = 0.05,
+              size = 1.5) +
+  stat_summary(fun.data = mean_se,
+               geom = "errorbar",
+               width = 0.15,
+               colour = "black",
+               linewidth = 1) +
+  scale_colour_manual(values = c("matched" = "orange",
+                                 "mismatched" = "purple")) +
+  labs(x = "The consistency of parental temperature",
+       y = "Male PO activity \n(log-transformed)") +
+  theme_classic() +
+  theme(
+    axis.line = element_blank(),
+    panel.border = element_rect(colour = "black",
+                                fill = NA,
+                                linewidth = 1),
+    legend.position = "none"
+  )+ 
+  scale_y_continuous(limits = c(-4.2, 4),
+                   breaks = seq(-4, 4, 2)) +
+  theme_classic() +
+  theme(
+    axis.line = element_blank(),
+    panel.border = element_rect(colour = "black",
+                                fill = NA,
+                                linewidth = 1),
+    legend.position = "none"
+  )
+
+# count sample size 
+male_po%>%
+  group_by(matchiness)  %>%
+  summarise(total_n = n(),
+            .groups = "drop")
+```
+
+## Lytic activity
+```{r}
+## Read file
+lytic <- read.csv("raw_data.csv") %>%
+  clean_names() %>%
+  mutate(os_temp = factor(os_temp, levels = c("C", "H"), 
+                          labels = c("ancestral", "high")),
+         mum_temp = factor(mum_temp, levels = c("C", "H"),
+                           labels = c("ancestral", "high")),
+         dad_temp = factor(dad_temp, levels = c("C", "H"),
+                           labels = c("ancestral", "high")),
+         sex = factor(sex, levels = c("F", "M"),
+                      labels = c("female", "male")),
+         os_age = factor(os_age, levels = c("1", "3", "5", "7"), 
+                         ordered = TRUE)
+         ) %>% mutate(zone_area_2 = as.numeric(zone_area_2))
+
+## Tidy data (lytic)
+# step 1
+lytic_clean <- lytic %>%
+  filter(!is.na(zone_area_1))
+
+summary(lytic_clean)
+
+# step 2: calculate the mean zone area
+lytic_clean <- lytic_clean %>%
+  mutate(zone_area = (zone_area_1 + zone_area_2 + zone_area_3)/3)
+
+## Standardise data (lytic)
+lytic_corrected <- lytic_clean %>%
+  group_by(lytic_plate_id) %>%
+  mutate(lytic_corrected = zone_area / lytic_interplate) %>%  # Compute standardized lytic activity
+
+  group_by(.groups = "drop") 
+
+## Separate dataset by sex (lytic)
+
+# female data
+female_ly <- lytic_corrected [lytic_corrected$sex == "female", ]
+
+# male data
+male_ly <- lytic_corrected [lytic_corrected$sex == "male", ]
+
+```
+
+## Female analysis (lytic)
+```{r}
+# change the order to present zone clearity result:
+female_ly$zone_clarity <- relevel(factor(female_ly$zone_clarity), ref = "super_clear")
+
+# Full model: with all possible interactions
+
+F_model_ly_full <- lmer(lytic_corrected ~ mum_temp * dad_temp * os_temp + os_age + weight + zone_clarity + (1 | mother),
+  data = female_ly)
+
+summary (F_model_ly_full)
+Anova(F_model_ly_full, type = 3)
+resid_panel(F_model_ly_full)
+
+# Reduced model: excluding the non-significant three-way interaction
+
+F_model_ly_2 <- lmer(lytic_corrected ~ mum_temp * dad_temp +  mum_temp * os_temp + dad_temp * os_temp + os_age + weight + zone_clarity + (1 | mother),
+  data = female_ly)
+
+summary (F_model_ly_2)
+Anova(F_model_ly_2, type = 3)
+resid_panel(F_model_ly_2)
+
+# Final model: excluding the non-significant two-way interactions
+
+F_model_ly_3 <- lmer(lytic_corrected ~ mum_temp + dad_temp + os_temp + os_age + weight + zone_clarity + (1 | mother),
+  data = female_ly)
+
+summary (F_model_ly_3)
+Anova(F_model_ly_3, type = 3)
+resid_panel(F_model_ly_3)
+
+# model comparison
+anova (F_model_ly_full, F_model_ly_3, REML = FALSE)
+```
+## Figure - femaly lytic
+```{r}
+####################
+## offspring temp ## (Figure 2B)
+####################
+library(ggplot2)
+F2 <- ggplot(female_ly, aes(x = os_temp, y = lytic_corrected)) +
+  geom_violin(colour = "black",
+              alpha = 0.6,
+              width = 0.5) +
+  geom_jitter(aes(colour = os_temp),
+              width = 0.1,
+              alpha = 0.05,
+              size = 1.5) +
+  stat_summary(fun.data = mean_se,
+               geom = "errorbar",
+               width = 0.15,
+               colour = "black",
+               linewidth = 1) +
+  scale_colour_manual(values = c("ancestral" = "blue",
+                                 "high" = "red")) +
+  scale_x_discrete(labels = c("ancestral" = "control",
+                              "high" = "high")) +
+  labs(x = "offspring temp",
+       y = "lytic_corrected") +
+  theme_classic() +
+  theme(
+    axis.line = element_blank(),
+    panel.border = element_rect(colour = "black",
+                                fill = NA,
+                                linewidth = 1),
+    legend.position = "none"
+  )
+
+F2 + scale_y_continuous(limits = c(0.5, 1.5),
+                   breaks = seq(0.5, 1.5, 0.25))
+
+# count sample size
+female_ly%>%
+  group_by(os_temp)  %>%
+  summarise(total_n = n(),
+            .groups = "drop")     
+
+```
+
+## Male analysis (lytic)
+```{r}
+
+# change the order to present zone clearity result:
+male_ly$zone_clarity <- relevel(factor(male_ly$zone_clarity), ref = "super_clear")
+
+
+# Full model: with all possible interactions
+
+M_model_ly_full <- lmer(lytic_corrected ~ mum_temp * dad_temp * os_temp + os_age + weight + zone_clarity + (1 | mother),
+  data = male_ly)
+
+summary (M_model_ly_full)
+Anova(M_model_ly_full, type = 3)
+resid_panel(M_model_ly_full)
+
+# Reduced model: excluding the non-significant three-way interaction
+
+M_model_ly_2 <- lmer(lytic_corrected ~ mum_temp * dad_temp +  mum_temp * os_temp + dad_temp * os_temp + os_age + weight + zone_clarity + (1 | mother),
+  data = male_ly)
+
+summary (M_model_ly_2)
+Anova(M_model_ly_2, type = 3)
+resid_panel(M_model_ly_2)
+
+# Final model: excluding the non-significant two-way interactions
+
+M_model_ly_3 <- lmer(lytic_corrected ~ mum_temp + dad_temp + os_temp + os_age + weight + zone_clarity + (1 | mother),
+  data = male_ly)
+
+summary (M_model_ly_3)
+Anova(M_model_ly_3, type = 3)
+resid_panel(M_model_ly_3)
+
+# model comparison
+anova (M_model_ly_full, M_model_ly_3, REML = FALSE)
+```
+
+## Figure - male lytic
+```{r}
+###########################
+## offspring temperature ## Figure 2B
+###########################
+
+library(ggplot2)
+M2 <- ggplot(male_ly, aes(x = os_temp, y = lytic_corrected)) +
+  geom_violin(colour = "black",
+              alpha = 0.6,
+              width = 0.5) +
+  geom_jitter(aes(colour = os_temp),
+              width = 0.1,
+              alpha = 0.05,
+              size = 1.5) +
+  stat_summary(fun.data = mean_se,
+               geom = "errorbar",
+               width = 0.15,
+               colour = "black",
+               linewidth = 1) +
+  scale_colour_manual(values = c("ancestral" = "blue",
+                                 "high" = "red")) +
+  scale_x_discrete(labels = c("ancestral" = "control",
+                              "high" = "high")) +
+  labs(x = "offspring temp",
+       y = "lytic_corrected") +
+  theme_classic() +
+  theme(
+    axis.line = element_blank(),
+    panel.border = element_rect(colour = "black",
+                                fill = NA,
+                                linewidth = 1),
+    legend.position = "none"
+  )
+M2 + scale_y_continuous(limits = c(0.5, 1.5),
+                   breaks = seq(0.5, 1.5, 0.25))
+
+# count sample size 
+male_ly%>%
+  group_by(os_temp)  %>%
+  summarise(total_n = n(),
+            .groups = "drop")      
+
+```
+
+# effect size (cohens'd)
+```{r}
+library(dplyr)
+library(effectsize)
+
+####################################
+### offspring temp _ PO activity ###
+####################################
+
+# Cohen's d
+f_eff_po <- cohens_d(log_po_corrected ~ os_temp, data = female_po)
+m_eff_po <- cohens_d(log_po_corrected ~ os_temp, data = male_po)
+
+f_eff_po
+m_eff_po
+
+# Extract d values
+d_f_po <- f_eff_po$Cohens_d[1]
+d_m_po <- m_eff_po$Cohens_d[1]
+
+# Sample sizes per os_temp group
+f_n_po <- female_po %>%
+  group_by(os_temp) %>%
+  summarise(n = sum(!is.na(log_po_corrected))) %>%
+  pull(n)
+
+m_n_po <- male_po %>%
+  group_by(os_temp) %>%
+  summarise(n = sum(!is.na(log_po_corrected))) %>%
+  pull(n)
+
+# Assign group sizes
+f_n1_po <- f_n_po[1]
+f_n2_po <- f_n_po[2]
+
+m_n1_po <- m_n_po[1]
+m_n2_po <- m_n_po[2]
+
+# Standard error of Cohen's d
+SE_f_po <- sqrt((f_n1_po + f_n2_po) / (f_n1_po * f_n2_po) + (d_f_po^2 / (2 * (f_n1_po + f_n2_po - 2))))
+SE_m_po <- sqrt((m_n1_po + m_n2_po) / (m_n1_po * m_n2_po) + (d_m_po^2 / (2 * (m_n1_po + m_n2_po - 2))))
+
+# Contrast between effect sizes
+contrast_po <- d_f_po - d_m_po
+
+# SE of contrast
+SE_contrast_po <- sqrt(SE_f_po^2 + SE_m_po^2)
+
+# t statistic
+t_value_po <- contrast_po / SE_contrast_po
+
+# Welch-style df
+df_f_po <- f_n1_po + f_n2_po - 2
+df_m_po <- m_n1_po + m_n2_po - 2
+
+df_welch_po <- (SE_f_po^2 + SE_m_po^2)^2 /
+  ((SE_f_po^4 / df_f_po) + (SE_m_po^4 / df_m_po))
+
+# p-value
+p_value_po <- 2 * pt(-abs(t_value_po), df_welch_po)
+
+# output
+c(
+  female_d = d_f_po,
+  male_d = d_m_po,
+  contrast = contrast_po,
+  SE_contrast = SE_contrast_po,
+  t_value = t_value_po,
+  df = df_welch_po,
+  p_value = p_value_po
+)
+
+#######################################
+### offspring temp _ lytic activity ###
+#######################################
+
+# Cohen's d
+f_eff_ly <- cohens_d(lytic_corrected ~ os_temp, data = female_ly)
+m_eff_ly <- cohens_d(lytic_corrected ~ os_temp, data = male_ly)
+
+f_eff_ly
+m_eff_ly
+# Extract d values
+d_f_ly <- f_eff_ly$Cohens_d[1]
+d_m_ly <- m_eff_ly$Cohens_d[1]
+
+# Sample sizes per os_temp group
+f_n_ly <- female_ly %>%
+  group_by(os_temp) %>%
+  summarise(n = sum(!is.na(lytic_corrected))) %>%
+  pull(n)
+
+m_n_ly <- male_ly %>%
+  group_by(os_temp) %>%
+  summarise(n = sum(!is.na(lytic_corrected))) %>%
+  pull(n)
+
+# Assign group sizes
+f_n1_ly <- f_n_ly[1]
+f_n2_ly <- f_n_ly[2]
+
+m_n1_ly <- m_n_ly[1]
+m_n2_ly <- m_n_ly[2]
+
+# Standard error of Cohen's d
+SE_f_ly <- sqrt((f_n1_ly + f_n2_ly) / (f_n1_ly * f_n2_ly) + (d_f_ly^2 / (2 * (f_n1_ly + f_n2_ly - 2))))
+SE_m_ly <- sqrt((m_n1_ly + m_n2_ly) / (m_n1_ly * m_n2_ly) + (d_m_ly^2 / (2 * (m_n1_ly + m_n2_ly - 2))))
+
+# Contrast between effect sizes
+contrast_ly <- d_f_ly - d_m_ly
+
+# SE of contrast
+SE_contrast_ly <- sqrt(SE_f_ly^2 + SE_m_ly^2)
+
+# t statistic
+t_value_ly <- contrast_ly / SE_contrast_ly
+
+# Welch-style df
+df_f_ly <- f_n1_ly + f_n2_ly - 2
+df_m_ly <- m_n1_ly + m_n2_ly - 2
+
+df_welch_ly <- (SE_f_ly^2 + SE_m_ly^2)^2 /
+  ((SE_f_ly^4 / df_f_ly) + (SE_m_ly^4 / df_m_ly))
+
+# p-value
+p_value_ly <- 2 * pt(-abs(t_value_ly), df_welch_ly)
+
+# output
+c(
+  female_d = d_f_ly,
+  male_d = d_m_ly,
+  contrast = contrast_ly,
+  SE_contrast = SE_contrast_ly,
+  t_value = t_value_ly,
+  df = df_welch_ly,
+  p_value = p_value_ly
+)
+
+```
+## Figure - effect size
+```{r}
+EFF=read.table(file="effect_size.csv",header = TRUE,sep=",")
+EFF$sex<-factor(EFF$sex, levels=c("female","male"))
+
+########################
+## offspring temp -PO ## Figure 2A
+########################
+off_temp_PO <- ggplot(EFF, aes(x = sex, y = PO_off, ymin = PO_off_low, ymax = PO_off_high,fill = sex, shape=sex))+ geom_pointrange(linewidth = 1 ,size=1,stroke=1,color="black")+scale_fill_manual(values = alpha(c("black", "white")))+scale_shape_manual(values = c(21,21))
+off_temp_PO
+
+off_temp_PO +scale_y_continuous(position = "right",breaks=seq(-0.6, 0.6, 0.3),limits=c(-0.6,0.6))+scale_x_discrete(labels = NULL)+labs(x="", y="")+theme_test()+theme(text = element_text(size=),axis.text.y = element_text(size = 0),legend.position="none",axis.ticks.x = element_blank(),panel.border = element_rect(colour = "black",
+                                fill = NA,
+                                linewidth = 1.5))
+
+###########################
+## offspring temp -lytic ## Figure 2B
+###########################
+off_temp_ly <- ggplot(EFF, aes(x = sex, y = ly_off, ymin = ly_off_low, ymax = ly_off_high,fill = sex, shape=sex))+ geom_pointrange(linewidth = 1 ,size=1,stroke=1,color="black")+scale_fill_manual(values = alpha(c("black", "white")))+scale_shape_manual(values = c(21,21))
+off_temp_ly
+
+off_temp_ly  +scale_y_continuous(position = "right",breaks=seq(-0.6, 0.6, 0.3),limits=c(-0.6,0.6))+scale_x_discrete(labels = NULL)+labs(x="", y="")+theme_test()+theme(text = element_text(size=),axis.text.y = element_text(size = 0),legend.position="none",axis.ticks.x = element_blank(),panel.border = element_rect(colour = "black",
+                                fill = NA,
+                                linewidth = 1.5))
+
+```
+
