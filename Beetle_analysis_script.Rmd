@@ -314,69 +314,6 @@ male_po%>%
             .groups = "drop") 
 ```
 
-## Additional analysis by replacing 'maternal-by-paternal temperature combinations' with the matching between maternal and paternal temperatures
-```{r}
-## Create a new column depending on temperature matching between maternal and paternal temperatures
-library(dplyr)
-
-male_po <- male_po %>%
-  mutate(matchiness = case_when(
-    mum_temp == dad_temp ~ "matched",
-    mum_temp != dad_temp ~ "mismatched"
-  ))
-
-## Additional model (Replacing "mum_temp" and "dad_temp" with "matchiness" in the final male model)
-M_model_po_4 <- lmer(log_po_corrected ~ matchiness + os_temp + os_age + weight + (1 | mother), data = male_po) 
-summary (M_model_po_4)
-Anova(M_model_po_4, type = 3)
-resid_panel(M_model_po_4)
-
-emmeans(M_model_po_4, ~ matchiness) %>%
-  pairs(adjust = "tukey")
-
-## Figure (Figure S2)
-M2 <- ggplot(male_po, aes(x = matchiness, y = log_po_corrected, color = matchiness)) +
-  geom_violin(colour = "black",
-              alpha = 0.6,
-              width = 0.5) +
-  geom_jitter(width = 0.1,
-              alpha = 0.05,
-              size = 1.5) +
-  stat_summary(fun.data = mean_se,
-               geom = "errorbar",
-               width = 0.15,
-               colour = "black",
-               linewidth = 1) +
-  scale_colour_manual(values = c("matched" = "orange",
-                                 "mismatched" = "purple")) +
-  labs(x = "The consistency of parental temperature",
-       y = "Male PO activity \n(log-transformed)") +
-  theme_classic() +
-  theme(
-    axis.line = element_blank(),
-    panel.border = element_rect(colour = "black",
-                                fill = NA,
-                                linewidth = 1),
-    legend.position = "none"
-  )+ 
-  scale_y_continuous(limits = c(-4.2, 4),
-                   breaks = seq(-4, 4, 2)) +
-  theme_classic() +
-  theme(
-    axis.line = element_blank(),
-    panel.border = element_rect(colour = "black",
-                                fill = NA,
-                                linewidth = 1),
-    legend.position = "none"
-  )
-
-# count sample size 
-male_po%>%
-  group_by(matchiness)  %>%
-  summarise(total_n = n(),
-            .groups = "drop")
-```
-
 ## Lytic activity
 ```{r}
 ## Read file
@@ -424,12 +361,10 @@ male_ly <- lytic_corrected [lytic_corrected$sex == "male", ]
 
 ## Female analysis (lytic)
 ```{r}
-# change the order to present zone clearity result:
-female_ly$zone_clarity <- relevel(factor(female_ly$zone_clarity), ref = "super_clear")
 
 # Full model: with all possible interactions
 
-F_model_ly_full <- lmer(lytic_corrected ~ mum_temp * dad_temp * os_temp + os_age + weight + zone_clarity + (1 | mother),
+F_model_ly_full <- lmer(lytic_corrected ~ mum_temp * dad_temp * os_temp + os_age + weight + (1 | mother),
   data = female_ly)
 
 summary (F_model_ly_full)
@@ -438,7 +373,7 @@ resid_panel(F_model_ly_full)
 
 # Reduced model: excluding the non-significant three-way interaction
 
-F_model_ly_2 <- lmer(lytic_corrected ~ mum_temp * dad_temp +  mum_temp * os_temp + dad_temp * os_temp + os_age + weight + zone_clarity + (1 | mother),
+F_model_ly_2 <- lmer(lytic_corrected ~ mum_temp * dad_temp +  mum_temp * os_temp + dad_temp * os_temp + os_age + weight + (1 | mother),
   data = female_ly)
 
 summary (F_model_ly_2)
@@ -447,7 +382,7 @@ resid_panel(F_model_ly_2)
 
 # Final model: excluding the non-significant two-way interactions
 
-F_model_ly_3 <- lmer(lytic_corrected ~ mum_temp + dad_temp + os_temp + os_age + weight + zone_clarity + (1 | mother),
+F_model_ly_3 <- lmer(lytic_corrected ~ mum_temp + dad_temp + os_temp + os_age + weight + (1 | mother),
   data = female_ly)
 
 summary (F_model_ly_3)
@@ -504,14 +439,9 @@ female_ly%>%
 
 ## Male analysis (lytic)
 ```{r}
-
-# change the order to present zone clearity result:
-male_ly$zone_clarity <- relevel(factor(male_ly$zone_clarity), ref = "super_clear")
-
-
 # Full model: with all possible interactions
 
-M_model_ly_full <- lmer(lytic_corrected ~ mum_temp * dad_temp * os_temp + os_age + weight + zone_clarity + (1 | mother),
+M_model_ly_full <- lmer(lytic_corrected ~ mum_temp * dad_temp * os_temp + os_age + weight + (1 | mother),
   data = male_ly)
 
 summary (M_model_ly_full)
@@ -520,7 +450,7 @@ resid_panel(M_model_ly_full)
 
 # Reduced model: excluding the non-significant three-way interaction
 
-M_model_ly_2 <- lmer(lytic_corrected ~ mum_temp * dad_temp +  mum_temp * os_temp + dad_temp * os_temp + os_age + weight + zone_clarity + (1 | mother),
+M_model_ly_2 <- lmer(lytic_corrected ~ mum_temp * dad_temp +  mum_temp * os_temp + dad_temp * os_temp + os_age + weight + (1 | mother),
   data = male_ly)
 
 summary (M_model_ly_2)
@@ -529,7 +459,7 @@ resid_panel(M_model_ly_2)
 
 # Final model: excluding the non-significant two-way interactions
 
-M_model_ly_3 <- lmer(lytic_corrected ~ mum_temp + dad_temp + os_temp + os_age + weight + zone_clarity + (1 | mother),
+M_model_ly_3 <- lmer(lytic_corrected ~ mum_temp + dad_temp + os_temp + os_age + weight + (1 | mother),
   data = male_ly)
 
 summary (M_model_ly_3)
@@ -657,6 +587,21 @@ c(
   p_value = p_value_po
 )
 
+# CIs for each sex (from effectsize::cohens_d)
+f_ci_po <- c(f_eff_po$CI_low[1], f_eff_po$CI_high[1])
+m_ci_po <- c(m_eff_po$CI_low[1], m_eff_po$CI_high[1])
+
+# 95% CI for the difference in d
+contrast_ci_po <- contrast_po + c(-1, 1) * qt(0.975, df_welch_po) * SE_contrast_po
+
+round(c(
+  female_d = d_f_po,  f_CI_low = f_ci_po[1], f_CI_high = f_ci_po[2],
+  male_d   = d_m_po,  m_CI_low = m_ci_po[1], m_CI_high = m_ci_po[2],
+  contrast = contrast_po, contrast_CI_low = contrast_ci_po[1], contrast_CI_high = contrast_ci_po[2],
+  SE_contrast = SE_contrast_po, t_value = t_value_po, df = df_welch_po
+), 2)
+signif(p_value_po, 3)
+
 #######################################
 ### offspring temp _ lytic activity ###
 #######################################
@@ -716,6 +661,8 @@ p_value_ly <- 2 * pt(-abs(t_value_ly), df_welch_ly)
 c(
   female_d = d_f_ly,
   male_d = d_m_ly,
+  female_n = f_n_ly,
+  male_n = m_n_ly,
   contrast = contrast_ly,
   SE_contrast = SE_contrast_ly,
   t_value = t_value_ly,
@@ -724,6 +671,7 @@ c(
 )
 
 ```
+
 ## Figure - effect size
 ```{r}
 EFF=read.table(file="effect_size.csv",header = TRUE,sep=",")
@@ -751,3 +699,53 @@ off_temp_ly  +scale_y_continuous(position = "right",breaks=seq(-0.6, 0.6, 0.3),l
 
 ```
 
+## Figure - body weight vs immune activity
+
+# Sex colours (kept different from your blue/red temperature colours)
+sex_cols <- c("female" = "red", "male" = "blue")
+
+# Shared styling to match your other figures
+weight_theme <- theme_classic() +
+  theme(
+    axis.line = element_blank(),
+    panel.border = element_rect(colour = "black",
+                                fill = NA,
+                                linewidth = 1)
+  )
+
+####################
+## PO activity    ##
+####################
+W1 <- ggplot(po_corrected, aes(x = weight, y = log_po_corrected,
+                               colour = sex, fill = sex)) +
+  geom_point(shape = 21, colour = "grey30", stroke = 0.3,
+             size = 1.8) +                                  # black outline on dots only
+  geom_smooth(method = "lm", formula = y ~ x, se = TRUE,
+              linewidth = 1, alpha = 0.2) +                 # line keeps sex colour
+  scale_colour_manual(values = sex_cols) +                  # line colours
+  scale_fill_manual(values = alpha(sex_cols, 0.6)) +        # dot + ribbon fill
+  labs(x = "body weight (mg)",
+       y = "PO activitiy\n(log-transformed)",
+       colour = "sex", fill = "sex") +
+  weight_theme
+
+W1 + theme(legend.position = "none")
+
+####################
+## Lytic activity ##
+####################
+W2 <- ggplot(lytic_corrected, aes(x = weight, y = lytic_corrected,
+                                  colour = sex, fill = sex)) +
+  geom_point(shape = 21, colour = "black", stroke = 0.3,
+             size = 1.5) +
+  geom_smooth(method = "lm", formula = y ~ x, se = TRUE,
+              linewidth = 1, alpha = 0.2) +
+  scale_colour_manual(values = sex_cols) +
+  scale_fill_manual(values = alpha(sex_cols, 0.4)) +
+  labs(x = "body weight (mg)",
+       y = "lytic activity",
+       colour = "sex", fill = "sex") +
+  weight_theme
+
+W2
+```
