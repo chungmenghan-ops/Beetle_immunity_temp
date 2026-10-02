@@ -1,6 +1,6 @@
 ---
 title: "README"
-subtitle: "Sex differences in how elevated temperatures affect immune response"
+subtitle: "Effects of parental and developmental temperature on offspring immunity"
 ---
 
 ## Overview
